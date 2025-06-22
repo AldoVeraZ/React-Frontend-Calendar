@@ -5,9 +5,13 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   onAddNewEvent,
   onDetleteEvent,
+  onLoadEvents,
   onSetActiveEvent,
   onUpdateEvent,
 } from "../store";
+import { calendarApi } from "../api";
+import { convertEventsToDateEvents } from "../helpers";
+import Swal from "sweetalert2";
 
 export const useCalendarStore = () => {
   // este custom hook toma los eventos del store y los retorna a CalendarPAge
@@ -19,6 +23,8 @@ export const useCalendarStore = () => {
   // si tengo una nota activa tengo un objeto y si no tengo null
   // por eso hayq ue determinar si tengo una nota activa o no
 
+  const { user } = useSelector((state) => state.auth);
+
   // funcionalidad para hacer el dispatch de la accion del evento
   const setActiveEvent = (calendarEvent) => {
     dispatch(onSetActiveEvent(calendarEvent));
@@ -27,25 +33,54 @@ export const useCalendarStore = () => {
 
   // Acciones sincronas
   const startSavingEvent = async (calendarEvent) => {
-    // TODO: llegar al backend
-
-    // Todo bien
-    if (calendarEvent._id) {
-      // Actualizando , enviamos el payload que en este caso le llamamos calendarEvent
-      dispatch(onUpdateEvent({ ...calendarEvent }));
-    } else {
-      // Creando
-      dispatch(onAddNewEvent({ ...calendarEvent, _id: new Date().getTime() }));
+    // TODO: Update event
+    // Manejar el error:
+    try {
+      if (calendarEvent.id) {
+        // Actualizando , enviamos el payload que en este caso le llamamos calendarEvent
+        await calendarApi.put(`/events/${calendarEvent.id}`, calendarEvent);
+        dispatch(onUpdateEvent({ ...calendarEvent, user }));
+        return;
+      }
+      // Creando (CREACIÓN DEL EVENTO)
+      const { data } = await calendarApi.post("/events", calendarEvent);
+      // console.log({ data });
+      dispatch(onAddNewEvent({ ...calendarEvent, id: data.evento.id, user }));
+    } catch (error) {
+      console.log(error);
+      Swal.fire("Error al guardar", error.response.data.msg, "error");
     }
   };
 
   // aquí, nosotros vamos a ocupar una función para mandar a hacer el Dispatch de esa accion
   // esta elminacion no es sincrona es asincrona, porque tenemos que llegar al beckend es quien lo elimina y cuando lo elimina el backend va a regresar
   // una respuesta , se elimino correctamente o no se encontro ninguna nota a eliminar etc, entonces deberia llamarse startDeletingEvent
-  const startDeletingEvent = () => {
+  const startDeletingEvent = async () => {
     //Todo: llegar al backend
+    try {
+      await calendarApi.delete(`/events/${activeEvent.id}`);
+      dispatch(onDetleteEvent());
+      return;
+    } catch (error) {
+      console.log(error);
+      Swal.fire("Error al eliminar", error.response.data.msg, "error");
+    }
+  };
 
-    dispatch(onDetleteEvent());
+  const startLoadingEvents = async () => {
+    try {
+      // llegar al backend
+      const { data } = await calendarApi.get("/events");
+      // console.log({ data });
+      // la data viene en data eventos eso hay que llamar
+      // le pasamos como argumento, data.eventos que asi lo tenemos en el backend
+      const events = convertEventsToDateEvents(data.eventos);
+      dispatch(onLoadEvents(events));
+      // console.log(events);
+    } catch (error) {
+      console.log("error cargando eventos");
+      console.log(error);
+    }
   };
 
   return {
@@ -58,9 +93,11 @@ export const useCalendarStore = () => {
     // entonces con esto ya puedo saber si hay un evento seleccionado o no
 
     // * Métodos
-    startDeletingEvent,
     setActiveEvent,
+    startDeletingEvent,
+    startLoadingEvents,
     // llamo este evento con el payload que esta esperando en el calendarEvent con la accion y se encarga de hacer el dispacht respectivo
     startSavingEvent,
+    startDeletingEvent,
   };
 };
